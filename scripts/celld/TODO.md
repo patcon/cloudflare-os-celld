@@ -19,9 +19,16 @@ agent code runs return their logs. Open: live updates, agent access to gadget bi
   - `.13` (`27e98e0`, run 37579213759): everything above, plus `__entrypointResolve` falls back
     to reading the property on a get-only Proxy (the app's `GatekeeperLoopback`, which backs the
     agent's `env.GADGET`). Untested.
+  - **Don't run `.12` or `.13`:** allowing calls into retiring isolates let a call reach an
+    isolate the pool had already freed, and celld panicked (`entered isolate 2 after it was
+    freed`, SIGABRT). `.14` (`90a37b3`, run 37580518174) takes an affiliation and checks
+    `Slot::is_live()` before driving. celld was put back on `.11` meanwhile.
+  - On `.12`, live sync worked for the user between two tabs, and page B received `presence`
+    pushes from the gadget, so server→browser callbacks work. (My scripted typing test is
+    unreliable; trust the frames or a manual test.)
 - Next, in order:
-  1. Install `.13`, restart `pnpm run-local:celld --logs`.
-  2. Live sync: open the Workspace Docs workspace (`/workspace/1a1b70bf…`) in two tabs, type in
+  1. Install `.14`, restart `pnpm run-local:celld --logs`.
+  2. Live sync: open a fresh Workspace Docs workspace (e.g. `/workspace/c971d86b…`) in two tabs, type in
      one, check the other updates without reload.
   3. Agent → gadget: in a **new** chat in that workspace (Gemini), ask it to read the document
      via `env.GADGET.getDocument()`. Before this, reject or discard the agent's earlier
