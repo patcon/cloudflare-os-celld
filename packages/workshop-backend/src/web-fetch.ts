@@ -25,7 +25,9 @@ import type { AiGatewayConfig } from "./ai-gateway";
  * so the caller can pass a stub in tests without constructing a full Cloudflare.Env.
  */
 export type WebFetchEnv = {
-  ai: Ai;
+  // Absent when the deployment has no Workers AI binding (e.g. a runtime without Workers AI,
+  // such as celld); conversion then falls back to `htmlToText` or the raw body.
+  ai: Ai | undefined;
   gateway: AiGatewayConfig | null;
 };
 
@@ -188,6 +190,34 @@ function buildGatewayOptions(
   return { id: gateway.sameAccountGateway, metadata: { tool: "webFetch", automated: true } };
 }
 
+// Convertible types that are readable as-is when there's no Workers AI binding.
+const TEXT_MIME_TYPES = new Set(["application/xml", "text/xml", "text/csv"]);
+
+const HTML_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ",
+};
+
+// A rough HTML-to-text pass for when `toMarkdown()` isn't available: drops non-content
+// elements, turns block boundaries into line breaks, strips the remaining tags, and decodes
+// the common entities. Links and formatting are lost.
+export function htmlToText(html: string): string {
+  return html
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<(script|style|noscript|template|svg|head)\b[\s\S]*?<\/\1\s*>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?(p|div|section|article|header|footer|nav|main|aside|h[1-6]|li|ul|ol|tr|table|pre|blockquote)\b[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, code: string) => {
+        if (code[0] !== "#") return HTML_ENTITIES[code.toLowerCase()] ?? entity;
+        const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+        return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : entity;
+      })
+      .replace(/[ \t\f\v\r]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+}
+
 // Attempt to convert a document to Markdown using the Workers AI binding. Returns the
 // Markdown body on success, or null if the document's MIME type isn't in the supported
 // allow-list. Throws (with a contextual error) if the conversion itself fails.
@@ -200,6 +230,15 @@ async function convertToMarkdown(
   const mime = baseContentType(contentType);
   if (!TO_MARKDOWN_MIME_TYPES.has(mime)) {
     return null;
+  }
+
+  if (!env.ai) {
+    if (mime === "text/html" || mime === "application/xhtml+xml") {
+      return htmlToText(decodeUtf8(bytes));
+    }
+    if (TEXT_MIME_TYPES.has(mime)) return null;
+    throw new Error(
+        `Converting ${mime} documents needs the Workers AI binding, which isn't configured.`);
   }
 
   // Build a name from the URL path so toMarkdown's format detection has a hint.

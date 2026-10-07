@@ -256,6 +256,26 @@ describe("webFetch document conversion", () => {
     expect(toMarkdown).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to plain text for HTML when there's no Workers AI binding", async () => {
+    mockResponse(
+        "<html><head><title>T</title><style>p{}</style></head><body><h1>Title</h1>" +
+        "<p>Body &amp; more&#33;</p><script>alert(1)</script></body></html>",
+        "text/html");
+
+    const result = await webFetch({ ai: undefined, gateway: null }, { url: "https://example.com/" });
+    expect(result.body).toBe("Title\n\nBody & more!");
+  });
+
+  it("passes CSV through and rejects PDF when there's no Workers AI binding", async () => {
+    const env = { ai: undefined, gateway: null };
+    mockResponse("a,b\n1,2", "text/csv");
+    expect((await webFetch(env, { url: "https://example.com/x.csv" })).body).toBe("a,b\n1,2");
+
+    mockResponse(new Uint8Array([0x25, 0x50, 0x44, 0x46]), "application/pdf");
+    await expect(webFetch(env, { url: "https://example.com/x.pdf" }))
+        .rejects.toThrow(/Workers AI binding/);
+  });
+
   it("does NOT call toMarkdown for image MIME types (cost guardrail)", async () => {
     // Image conversion uses paid Workers AI models. We explicitly exclude images from the
     // allow-list so a webFetch call can never trigger that path.
