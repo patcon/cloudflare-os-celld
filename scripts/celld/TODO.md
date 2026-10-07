@@ -5,9 +5,24 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
 
 ## 0. Review prior art
 
-- [ ] Assess what's useful in mohamedalichelbi's `portability/celld-mvp` branch:
+- [x] Assessed mohamedalichelbi's `portability/celld-mvp` branch (Aug 2026, against celld v0.3.0):
   https://github.com/cloudflare/cloudflare-os/compare/main...mohamedalichelbi:cloudflare-os:portability/celld-mvp
-  (compare with `make-config.ts`; check whether it works around cross-isolate stubs)
+  - The final diff is only `mise.toml` tasks + `.env.example` that `celld deploy` the unmodified
+    backend and router into a GCS bucket using his celld fork. An earlier KV/R2 shim was dropped.
+    Little to take beyond the router + backend fleet-deploy recipe (useful for step 4).
+  - The real work is in his celld fork, https://github.com/mohamedalichelbi/celld (PRs #1-#6):
+    - #1, #2 WebSocket upgrades across service bindings / from Workers: covered upstream by now
+      (our `/api` WebSocket connects on 0.6.1).
+    - #6 nested storage transactions: upstream has an equivalent (root `_transactionSerial`).
+    - **#3 "route durable object RPC targets across isolates"**: not upstream; tracked as open
+      denoland/celld#174. Routes calls on a stub back to the Durable Object that owns it. He
+      validated newGadget, getMetadata, newChat and sendChatMessage with it.
+      Limit: stubs created outside a Durable Object (e.g. the browser subscriber passed through
+      the session Worker in `subscribeConnectedAccounts`) still fail.
+      Commit `2498103b`; a trial cherry-pick onto 0.6.1 (`main-patcon`) gives one conflict hunk
+      in each of `js.rs`, `js/harness.js`, `main.rs`.
+  - Not proposed upstream by him (no PRs from him on denoland/celld).
+- [ ] Port #3 onto celld 0.6.1 (in `~/repos/celld`), build it, and rerun `pnpm run-local:celld`
 
 ## 1. Upstream the `ctx.exports` namespace gap
 
