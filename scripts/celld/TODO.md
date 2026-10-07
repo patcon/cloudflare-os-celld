@@ -21,14 +21,18 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
 celld throws "RPC stubs cannot cross isolate boundaries yet"; the session Worker and each Durable
 Object run in separate isolates.
 
-- [x] Signup and login (works)
-- [ ] Onboarding: connected-accounts subscription fails (`subscriber.ready is not a function`,
-  `server.ts:374` → `user.ts:1475`)
-- [ ] Open or create a workspace (`overseer.open()` takes a `notifyClosed` function stub and
-  returns a session RpcTarget, `server.ts:291`)
-- [ ] Chat in a workspace (needs a model configured)
-- [ ] Gadget load via `LOADER` and facets
-- [ ] Static inventory: list every session/DO method that takes or returns a stub
+- [x] Signup, login, onboarding, home, blueprint listing: work
+- [x] Connected accounts: subscription fails (`subscriber.ready is not a function`;
+  `server.ts:374` passes the browser's stub into the user DO, `user.ts:1475`)
+- [x] Create or open a workspace: fails (`'newChat' is not a function`; `overseer.open()` returns
+  the workspace session RpcTarget from the Overseer DO, `server.ts:291`)
+- [x] Chat, gadgets (`LOADER`), facets: unreachable, since all go through the Overseer stub
+- [x] Static inventory: of 56 `AuthenticatedApi` methods, `openGadget`, `newGadget`,
+  `subscribeConnectedAccounts`, `getAdminApi` and one more `RpcStub<Overseer>` method cross
+  isolates; the whole `Overseer` interface (the workspace) sits behind them
+
+Conclusion: the shell of the app works, but no workspace feature does until celld carries stubs
+across isolates.
 
 ## 3. Assess cross-isolate stub support in celld
 
