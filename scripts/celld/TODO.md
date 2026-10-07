@@ -35,6 +35,49 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
   isolate *and* the live request context that exported it. This is the remaining part of
   denoland/celld#174, and it's needed for every subscription (metadata, connected accounts,
   chat streaming).
+
+### Handoff: routing callbacks owned by a stateless isolate
+
+Goal: a best-effort patch on patcon/celld `rpc-targets-cross-isolate` (not aiming for upstream
+acceptance), offered to others. Installed locally as `celld 0.6.1-rpc-targets.1`; the previous
+binary is `~/.local/bin/celld-0.6.1-main-patcon`.
+
+Failing case: browser callback (capnweb) → session Worker (stateless isolate,
+`AuthenticatedApiImpl` in `server.ts`) → Overseer DO. The DO's `callback(metadata)` rejects in
+`__remoteStubOp` because the marker's scope `s` is `undefined`. Repro: `pnpm run-local:celld`,
+log in as `celldtest` / `correct-horse-battery-staple`, open any workspace: it hangs at
+"Loading workspace…" with no error (`.catch(unsubscribe)` in `subscribeToMetadata`).
+
+How the existing (DO-owned) path works, in celld:
+- `crates/celld/js/harness.js`: `__stubLift` writes a marker `{__celld$stub: id, t: isolate,
+  c: callable, s: scope}`; `s` comes from the stub entry's `scope`, which `__newEntry` sets from
+  `__currentActorScope() || undefined`, so it's `undefined` outside a DO. `__stubRevive` turns a
+  marker from another isolate into `__foreignStub(s, id, c, t)`; `__remoteStubOp` calls
+  `__stub_rpc_call(scope, id, pathJson, args)`. The owner side runs
+  `__celld.__dispatchStubRpc(id, pathJson, args)` (a null path disposes).
+- `crates/celld/js.rs`: `op_stub_rpc_call` sends a `StubRpcReq` (`host_channels.rs`) on
+  `STUB_RPC_TX`; `CellJob::StubRpc` runs `__dispatchStubRpc` as a cell event.
+- `crates/celld/main.rs`: `dispatch_stub_rpc` routes by cell scope through `app.request()` /
+  `local_request()` into `RuntimeManager::stub_rpc` (`runtime.rs`); `Route::Remote` errors.
+
+What's missing: an address for a *stateless* owner. Sketch:
+1. When lifting in a stateless isolate, record which isolate and which live I/O context owns the
+   entry (the entry already keeps `ctx`). Something like `t` plus an isolate/pool slot id and a
+   context id, instead of `s`.
+2. Add a second request kind (or extend `StubRpcReq` with an enum owner: `Cell(scope)` |
+   `Stateless{isolate, context}`) and route it to that isolate in the stateless pool
+   (`generation.rs` `service()` / `StatelessRuntime`, `pool.rs`), running `__dispatchStubRpc`
+   inside the still-open request context rather than as a cell event.
+3. Fail with a clear error when the context has ended (the WebSocket session closed) or the owner
+   is on another node; same-node only is fine for a best-effort patch.
+4. Check the reverse hop too: once the session Worker gets the call, it must forward it to the
+   browser's capnweb stub, which is already same-isolate and should just work.
+
+Verify with the repro above: the workspace should load and connected-accounts onboarding should
+stop logging `subscriber.ready is not a function`. Build via
+`gh workflow run release.yml -R patcon/celld --ref rpc-targets-cross-isolate` (~12 min; a second
+dispatch cancels a running one; bump the `-rpc-targets.N` version in `crates/celld/Cargo.toml`
+and `Cargo.lock` for each build you want to tell apart). No local Rust toolchain on this machine.
 - [ ] After testing the port, post on denoland/celld#174 (update the draft with results first;
   drop or confirm the unverified code-mode guess). Draft:
 
