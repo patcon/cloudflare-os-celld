@@ -24,8 +24,17 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
   - Not proposed upstream by him (no PRs from him on denoland/celld).
 - [x] Port #3 onto celld 0.6.1: branch `rpc-targets-cross-isolate` on patcon/celld, versioned
   `0.6.1-rpc-targets.1` (`run-local:celld` warns when `celld --version` lacks it)
-- [ ] Get a green release build of that branch (`gh workflow run release.yml -R patcon/celld
-  --ref rpc-targets-cross-isolate`), install its binary, and rerun `pnpm run-local:celld`
+- [x] Green release build of that branch (run 37556612470, all four platforms)
+- [x] Rerun `pnpm run-local:celld` with the patched binary. Creating a workspace now works
+  (`overseer.open()` returns, and calls into the Overseer DO arrive), but the workspace page
+  hangs at "Loading workspace…": `subscribeToMetadata` delivers the first metadata only via
+  `callback(metadata)` (`overseer.ts`, `OverseerClientInterface`), and that callback is the
+  browser's, forwarded through the session Worker, so it has no Durable Object owner.
+  `__remoteStubOp` rejects it, and `.catch(unsubscribe)` swallows the error.
+- [ ] Extend the patch to stubs owned by a stateless (non-DO) isolate: route the call back to the
+  isolate *and* the live request context that exported it. This is the remaining part of
+  denoland/celld#174, and it's needed for every subscription (metadata, connected accounts,
+  chat streaming).
 - [ ] After testing the port, post on denoland/celld#174 (update the draft with results first;
   drop or confirm the unverified code-mode guess). Draft:
 
