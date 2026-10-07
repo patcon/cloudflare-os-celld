@@ -65,6 +65,10 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
   and a `DurableObjectState.restore(params)` that calls `[restore](params)` at once and returns
   a live stub. Still missing: storing such a stub and reviving it later (hooks), and
   `ctx.restore` on a `WorkerEntrypoint` (`RESTORE_FORGER_HARNESS`).
+- [ ] Web fetch fails with `Cannot read properties of undefined (reading 'toMarkdown')`: HTML is
+  converted with `env.WORKERS_AI.toMarkdown()` (`web-fetch.ts`, wired at `overseer.ts:5269`),
+  but no wrangler config binds `WORKERS_AI`, and celld doesn't support Workers AI. Needs an
+  app-side fallback when the binding is absent (e.g. a plain HTML-to-text pass), not a celld fix.
 - Anthropic keys that aren't workspace-scoped get a 400 asking for `anthropic-workspace-id`;
   use a workspace-scoped key (unrelated to celld).
   - Note: `celld dev` self-fences with exit 3 (`SELF-FENCE: node lease not renewed`) when the
