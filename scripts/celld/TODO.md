@@ -3,6 +3,12 @@
 Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend boots under
 `celld dev` and signup works; it stops at cross-isolate RPC stubs.
 
+## 0. Review prior art
+
+- [ ] Assess what's useful in mohamedalichelbi's `portability/celld-mvp` branch:
+  https://github.com/cloudflare/cloudflare-os/compare/main...mohamedalichelbi:cloudflare-os:portability/celld-mvp
+  (compare with `make-config.ts`; check whether it works around cross-isolate stubs)
+
 ## 1. Upstream the `ctx.exports` namespace gap
 
 - [ ] Report or fix upstream: celld's `ctx.exports` exposes a migrated Durable Object class as a
