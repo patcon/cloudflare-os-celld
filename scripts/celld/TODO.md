@@ -1,7 +1,38 @@
 # celld TODO
 
-Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend boots under
-`celld dev` and signup works; it stops at cross-isolate RPC stubs.
+Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: on patched celld
+(`0.6.1-rpc-targets.N`), workspaces open, chat works (Gemini), gadgets get created and load, and
+agent code runs return their logs. Open: live updates, agent access to gadget bindings.
+
+## Where we left off (2026-10-07, night)
+
+- Builds: patcon/celld `rpc-targets-cross-isolate`. `release.yml` no longer has a concurrency
+  group (`bdb3ba8`), so dispatches run side by side and none get cancelled. Each build is
+  ~12 min; bump `-rpc-targets.N` in `crates/celld/Cargo.toml` and `Cargo.lock` first. Older
+  binaries are kept as `~/.local/bin/celld-0.6.1-rpc-targets.N`; this Mac is Intel, so install
+  the `x86_64-apple-darwin` asset. Disk was down to ~2.9 GiB free.
+- Installed: `.11`. Building when we stopped (check `gh run list -R patcon/celld`):
+  - `.12` (`d8d7c6f`, run 37578539609): stub calls into a retiring isolate are allowed. The pool
+    retires the session Worker's isolate ~30s in while its WebSockets stay open, and the patch
+    refused those calls, so the gadget registry silently dropped every subscriber. Likely also
+    the cause of missing chat streaming / sidebar pushes. Untested.
+  - `.13` (`27e98e0`, run 37579213759): everything above, plus `__entrypointResolve` falls back
+    to reading the property on a get-only Proxy (the app's `GatekeeperLoopback`, which backs the
+    agent's `env.GADGET`). Untested.
+- Next, in order:
+  1. Install `.13`, restart `pnpm run-local:celld --logs`.
+  2. Live sync: open the Workspace Docs workspace (`/workspace/1a1b70bf…`) in two tabs, type in
+     one, check the other updates without reload.
+  3. Agent → gadget: in a **new** chat in that workspace (Gemini), ask it to read the document
+     via `env.GADGET.getDocument()`. Before this, reject or discard the agent's earlier
+     `server.js` edits in the old chat (it edited the gadget 3× while working around errors).
+  4. If the agent still calls `env.GADGET.get(...)`, check the `DataCloneError: Could not
+     serialize object of type "RpcPromise"` it hit (probably a symptom of the missing methods).
+  5. Recheck chat streaming (text appears piece by piece) and sidebar rename/delete pushes.
+  6. Then the smaller items below (new-workspace hang, `toMarkdown`, `GatekeeperLoopback has no
+     fetch handler`), and update the celld#174 draft.
+- Persistent stubs (storing `ctx.restore()` stubs and reviving them later, for hooks) are
+  deliberately not started; see the gadget item below for the plan's scope.
 
 ## 0. Review prior art
 
@@ -70,9 +101,20 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
   celld resolved methods with `prop in target`. Fixed in `fc75e9c` (`.9`); also `fdc49fb` (`.8`)
   lifts stubs in facet and Worker Loader call args (callbacks used to fail with
   `DataCloneError`). Verified: Workspace Docs loads ("Saved"), and edits persist.
-- [ ] Live sync between two open gadget pages doesn't arrive: `SubscriberRegistry.add` calls
-  `dup()` and `onRpcBroken()` on the callback, and celld's foreign stubs sent both as remote
-  calls. `a34d8b5` (`.10`, building) implements them locally.
+- [ ] Live sync between two open gadget pages doesn't arrive. Two causes found:
+  `SubscriberRegistry.add` calls `dup()` and `onRpcBroken()` on the callback, and celld's
+  foreign stubs sent both as remote calls (`a34d8b5`, `.10`: implemented locally; still no sync
+  on `.10`); and the retiring-isolate refusal (`.12`). Retest on `.13`.
+- [x] Agent code runs (`executeCode`) failed with "Timed out waiting for logs from code
+  execution": logs come back through the loaded Worker's tail, and celld reported tails only
+  for `fetch()`, not RPC (`run()`). `d35faa8` (`.11`, Rust change) reports RPC calls too, with
+  `event: { rpcMethod }`. Verified: the agent now sees its output.
+- [ ] Agent's `env.GADGET.getDocument()` (and every method) fails with `The RPC receiver does not
+  implement the method`: `GatekeeperLoopback`'s constructor returns a get-only Proxy, and
+  `__entrypointResolve` checked `prop in inst`. `27e98e0` (`.13`) fixes; untested. Seen from
+  the loaded worker, `env.GADGET` enumerates only `fetch` and `scheduled`.
+- [ ] `Entrypoint "GatekeeperLoopback" has no fetch handler` in logs when the agent tried
+  `fetch` on a binding. Not blocking.
 - [ ] Web fetch fails with `Cannot read properties of undefined (reading 'toMarkdown')`: HTML is
   converted with `env.WORKERS_AI.toMarkdown()` (`web-fetch.ts`, wired at `overseer.ts:5269`),
   but no wrangler config binds `WORKERS_AI`, and celld doesn't support Workers AI. Needs an
@@ -121,9 +163,10 @@ What's missing: an address for a *stateless* owner. Sketch:
 
 Verify with the repro above: the workspace should load and connected-accounts onboarding should
 stop logging `subscriber.ready is not a function`. Build via
-`gh workflow run release.yml -R patcon/celld --ref rpc-targets-cross-isolate` (~12 min; a second
-dispatch cancels a running one; bump the `-rpc-targets.N` version in `crates/celld/Cargo.toml`
-and `Cargo.lock` for each build you want to tell apart). No local Rust toolchain on this machine.
+`gh workflow run release.yml -R patcon/celld --ref rpc-targets-cross-isolate` (~12 min; builds
+now run in parallel; bump the `-rpc-targets.N` version in `crates/celld/Cargo.toml` and
+`Cargo.lock` for each build you want to tell apart). No local Rust build: the target dir was
+removed for disk space, so CI is the compile check.
 - [ ] After testing the port, post on denoland/celld#174 (update the draft with results first;
   drop or confirm the unverified code-mode guess). Draft:
 
