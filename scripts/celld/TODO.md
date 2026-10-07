@@ -113,6 +113,15 @@ agent code runs return their logs. Open: live updates, agent access to gadget bi
   implement the method`: `GatekeeperLoopback`'s constructor returns a get-only Proxy, and
   `__entrypointResolve` checked `prop in inst`. `27e98e0` (`.13`) fixes; untested. Seen from
   the loaded worker, `env.GADGET` enumerates only `fetch` and `scheduled`.
+- [ ] Agent can't read the document's text. Asked "can you not read my document?", it ran a
+  `grep`-style search (`{"pattern": ".*", "workpiece": "GADGET"}`), found nothing, and said it
+  couldn't access the text. Investigate: is the document's content only in the gadget's
+  Durable Object storage (not in its files), so the agent has to go through `env.GADGET`
+  (blocked until `.13`)? Or does the search tool itself fail on celld? Check on `.13`.
+- [ ] The first Workspace Docs gadget (`/workspace/1a1b70bf…`) no longer compiles:
+  `subscribe()` fails with `compile: SyntaxError: Duplicate export of 'Gadget'`, from the
+  agent's `server.js` edits. Revert those edits, or test in a fresh workspace from Explore →
+  Workspace Docs.
 - [ ] `Entrypoint "GatekeeperLoopback" has no fetch handler` in logs when the agent tried
   `fetch` on a binding. Not blocking.
 - [ ] Web fetch fails with `Cannot read properties of undefined (reading 'toMarkdown')`: HTML is
