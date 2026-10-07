@@ -22,7 +22,10 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
       Commit `2498103b`; a trial cherry-pick onto 0.6.1 (`main-patcon`) gives one conflict hunk
       in each of `js.rs`, `js/harness.js`, `main.rs`.
   - Not proposed upstream by him (no PRs from him on denoland/celld).
-- [ ] Port #3 onto celld 0.6.1 (in `~/repos/celld`), build it, and rerun `pnpm run-local:celld`
+- [x] Port #3 onto celld 0.6.1: branch `rpc-targets-cross-isolate` on patcon/celld, versioned
+  `0.6.1-rpc-targets.1` (`run-local:celld` warns when `celld --version` lacks it)
+- [ ] Get a green release build of that branch (`gh workflow run release.yml -R patcon/celld
+  --ref rpc-targets-cross-isolate`), install its binary, and rerun `pnpm run-local:celld`
 - [ ] After testing the port, post on denoland/celld#174 (update the draft with results first;
   drop or confirm the unverified code-mode guess). Draft:
 

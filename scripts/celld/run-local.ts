@@ -19,6 +19,21 @@ const BACKEND_DIR = join(ROOT, "packages", "workshop-backend");
 
 const env = vpRunEnv();
 
+// Workspaces need RPC targets to cross isolates, which only a patched celld build supports
+// (https://github.com/patcon/celld/tree/rpc-targets-cross-isolate; see scripts/celld/TODO.md).
+const PATCHED_VERSION = /-rpc-targets\.\d+/;
+let celldVersion: string;
+try {
+  celldVersion = execFileSync("celld", ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .split("\n").find(line => line.startsWith("celld ")) ?? "celld (unknown version)";
+} catch {
+  console.error("celld is not on PATH. Install it: https://celld.dev");
+  process.exit(1);
+}
+if (!PATCHED_VERSION.test(celldVersion)) {
+  console.warn(`\nWarning: ${celldVersion} lacks the rpc-targets patch; opening a workspace will fail.\n`);
+}
+
 function runPnpm(args: string[], cwd = ROOT): void {
   console.log(`\n> pnpm ${args.join(" ")}`);
   const [command, argv] = pnpmCommand(args);
