@@ -49,5 +49,5 @@ across isolates.
 
 ## 5. Tooling (only if 3 looks viable)
 
-- [ ] `pnpm run-celld`: build the worker, generate the config, copy frontend assets, start celld
+- [x] `pnpm run-local:celld`: build the worker, generate the config, copy frontend assets, start celld
 - [ ] Decide on Browser Rendering (optional export path) and Cloudflare Access replacement
