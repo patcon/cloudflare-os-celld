@@ -23,6 +23,28 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
       in each of `js.rs`, `js/harness.js`, `main.rs`.
   - Not proposed upstream by him (no PRs from him on denoland/celld).
 - [ ] Port #3 onto celld 0.6.1 (in `~/repos/celld`), build it, and rerun `pnpm run-local:celld`
+- [ ] After testing the port, post on denoland/celld#174 (update the draft with results first;
+  drop or confirm the unverified code-mode guess). Draft:
+
+  > For reference, there's a partial implementation of this in @mohamedalichelbi's fork:
+  > mohamedalichelbi/celld@2498103b ("fix: route durable object RPC targets across isolates",
+  > merged there as mohamedalichelbi/celld#3, against v0.3.0). It was not proposed upstream.
+  >
+  > It covers RPC targets owned by a Durable Object. The stub marker records the owning DO's
+  > scope, and calls and disposal on the receiving side are routed back to that DO
+  > (`__dispatchStubRpc`). Stubs created outside a DO, for example in a stateless Worker, still
+  > throw "RPC stubs without a Durable Object owner cannot cross isolate boundaries yet." It might
+  > therefore cover the code-mode case when the loader is driven from a DO, but not when it's
+  > driven from a stateless Worker. I haven't verified either case.
+  >
+  > It came out of getting Cloudflare OS running on celld (mohamedalichelbi/cloudflare-os#1).
+  > There, the session Worker gets a live workspace `RpcTarget` back from a Durable Object. On
+  > 0.6.1, creating a workspace fails with `'newChat' is not a function` because that target
+  > arrives as a dead marker. The commit doesn't apply cleanly to 0.6.1; there's one conflict
+  > each in `js.rs`, `js/harness.js` and `main.rs`.
+  >
+  > 🤖 Generated with [Claude Code](https://claude.com/claude-code) (~200 words of LLM output
+  > from ~60 words of human prompt)
 
 ## 1. Upstream the `ctx.exports` namespace gap
 
