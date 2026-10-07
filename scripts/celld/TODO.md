@@ -59,12 +59,20 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
   celld `31456c8` (`0.6.1-rpc-targets.5`) makes it a byte stream; gadgets now get created. Packs
   received over RPC from a gatekeeper (`git-cache.ts` `consumePack`) will still fail: celld can't
   carry RPC streams across isolates yet.
-- [ ] Gadget preview shows "Failed to connect gadget to server": the server throws
+- [x] Gadget preview shows "Failed to connect gadget to server": the server throws
   `this.ctx.restore is not a function` (`getGadgetFacet`, `overseer.ts:4394`). celld had no
-  persistent stubs. celld `13eb098` (`0.6.1-rpc-targets.6`, building) adds the `restore` symbol
-  and a `DurableObjectState.restore(params)` that calls `[restore](params)` at once and returns
-  a live stub. Still missing: storing such a stub and reviving it later (hooks), and
-  `ctx.restore` on a `WorkerEntrypoint` (`RESTORE_FORGER_HARNESS`).
+  persistent stubs. celld `13eb098` (`.6`) adds the `restore` symbol and a
+  `DurableObjectState.restore(params)` that calls `[restore](params)` at once and returns a live
+  stub. Still missing: storing such a stub and reviving it later (hooks), and `ctx.restore` on a
+  `WorkerEntrypoint` (`RESTORE_FORGER_HARNESS`).
+- [x] Gadget then fails with `The RPC receiver does not implement the method "subscribe"`: the
+  app wraps the facet stub in a get-only Proxy posing as an `RpcTarget` (`getGadgetFacet`), and
+  celld resolved methods with `prop in target`. Fixed in `fc75e9c` (`.9`); also `fdc49fb` (`.8`)
+  lifts stubs in facet and Worker Loader call args (callbacks used to fail with
+  `DataCloneError`). Verified: Workspace Docs loads ("Saved"), and edits persist.
+- [ ] Live sync between two open gadget pages doesn't arrive: `SubscriberRegistry.add` calls
+  `dup()` and `onRpcBroken()` on the callback, and celld's foreign stubs sent both as remote
+  calls. `a34d8b5` (`.10`, building) implements them locally.
 - [ ] Web fetch fails with `Cannot read properties of undefined (reading 'toMarkdown')`: HTML is
   converted with `env.WORKERS_AI.toMarkdown()` (`web-fetch.ts`, wired at `overseer.ts:5269`),
   but no wrangler config binds `WORKERS_AI`, and celld doesn't support Workers AI. Needs an
