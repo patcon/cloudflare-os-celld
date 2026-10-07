@@ -44,3 +44,8 @@ wrangler.dev.jsonc
 .dev.vars.*
 **/.dev.vars
 **/.dev.vars.*
+
+# celld customizations
+.celld/
+wrangler.celld.json
+celld-assets/
