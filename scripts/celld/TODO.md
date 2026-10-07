@@ -4,39 +4,29 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: on patched 
 (`0.6.1-rpc-targets.N`), workspaces open, chat works (Gemini), gadgets get created and load, and
 agent code runs return their logs. Open: live updates, agent access to gadget bindings.
 
-## Where we left off (2026-10-07, night)
+## Where we left off (2026-10-07, afternoon)
 
 - Builds: patcon/celld `rpc-targets-cross-isolate`. `release.yml` no longer has a concurrency
   group (`bdb3ba8`), so dispatches run side by side and none get cancelled. Each build is
-  ~12 min; bump `-rpc-targets.N` in `crates/celld/Cargo.toml` and `Cargo.lock` first. Older
+  ~12-20 min; bump `-rpc-targets.N` in `crates/celld/Cargo.toml` and `Cargo.lock` first. Older
   binaries are kept as `~/.local/bin/celld-0.6.1-rpc-targets.N`; this Mac is Intel, so install
-  the `x86_64-apple-darwin` asset. Disk was down to ~2.9 GiB free.
-- Installed: `.11`. Building when we stopped (check `gh run list -R patcon/celld`):
-  - `.12` (`d8d7c6f`, run 37578539609): stub calls into a retiring isolate are allowed. The pool
-    retires the session Worker's isolate ~30s in while its WebSockets stay open, and the patch
-    refused those calls, so the gadget registry silently dropped every subscriber. Likely also
-    the cause of missing chat streaming / sidebar pushes. Untested.
-  - `.13` (`27e98e0`, run 37579213759): everything above, plus `__entrypointResolve` falls back
-    to reading the property on a get-only Proxy (the app's `GatekeeperLoopback`, which backs the
-    agent's `env.GADGET`). Untested.
-  - **Don't run `.12` or `.13`:** allowing calls into retiring isolates let a call reach an
-    isolate the pool had already freed, and celld panicked (`entered isolate 2 after it was
-    freed`, SIGABRT). `.14` (`90a37b3`, run 37580518174) takes an affiliation and checks
-    `Slot::is_live()` before driving. celld was put back on `.11` meanwhile.
-  - On `.12`, live sync worked for the user between two tabs, and page B received `presence`
-    pushes from the gadget, so server→browser callbacks work. (My scripted typing test is
-    unreliable; trust the frames or a manual test.)
+  the `x86_64-apple-darwin` asset. Don't run `.12` or `.13` (they panic on a freed isolate).
+- Installed: `.14` (`90a37b3`). Verified on it: live sync between two tabs of Workspace Docs
+  (`/workspace/c971d86b…`), including an edit made after the session isolate retired; no panic.
+- Building: `.15` (`333a2c7`, run 37674226481). Durable Object stub calls return a pipelinable
+  RpcPromise instead of a plain Promise. Root cause of the agent's `env.GADGET` failures:
+  `GatekeeperLoopback` returns a Proxy over the *un-awaited* `stub.startGatekeeperSession()`, so
+  on celld `session.getDocument` was `undefined` and every method answered "does not implement
+  the method". The `.13` `__entrypointResolve` fallback was right but not enough. Probably also
+  explains the `DataCloneError ... "RpcPromise"` from `env.GADGET.get(...)`.
 - Next, in order:
-  1. Install `.14`, restart `pnpm run-local:celld --logs`.
-  2. Live sync: open a fresh Workspace Docs workspace (e.g. `/workspace/c971d86b…`) in two tabs, type in
-     one, check the other updates without reload.
-  3. Agent → gadget: in a **new** chat in that workspace (Gemini), ask it to read the document
-     via `env.GADGET.getDocument()`. Before this, reject or discard the agent's earlier
-     `server.js` edits in the old chat (it edited the gadget 3× while working around errors).
-  4. If the agent still calls `env.GADGET.get(...)`, check the `DataCloneError: Could not
-     serialize object of type "RpcPromise"` it hit (probably a symptom of the missing methods).
-  5. Recheck chat streaming (text appears piece by piece) and sidebar rename/delete pushes.
-  6. Then the smaller items below (new-workspace hang, `toMarkdown`, `GatekeeperLoopback has no
+  1. Install `.15`, restart `pnpm run-local:celld --logs`, recheck live sync briefly.
+  2. Agent → gadget: new Gemini chat in `c971d86b…`. The first try on `.14` looped through 22
+     failing tool calls (~$0.15) before being stopped, so word the prompt as "run
+     `env.GADGET.getDocument()` once; if it fails, stop and report the error", and stop the agent
+     if the same error repeats.
+  3. Recheck chat streaming (text appears piece by piece) and sidebar rename/delete pushes.
+  4. Then the smaller items below (new-workspace hang, `toMarkdown`, `GatekeeperLoopback has no
      fetch handler`), and update the celld#174 draft.
 - Persistent stubs (storing `ctx.restore()` stubs and reviving them later, for hooks) are
   deliberately not started; see the gadget item below for the plan's scope.
@@ -108,18 +98,21 @@ agent code runs return their logs. Open: live updates, agent access to gadget bi
   celld resolved methods with `prop in target`. Fixed in `fc75e9c` (`.9`); also `fdc49fb` (`.8`)
   lifts stubs in facet and Worker Loader call args (callbacks used to fail with
   `DataCloneError`). Verified: Workspace Docs loads ("Saved"), and edits persist.
-- [ ] Live sync between two open gadget pages doesn't arrive. Two causes found:
+- [x] Live sync between two open gadget pages didn't arrive. Two causes:
   `SubscriberRegistry.add` calls `dup()` and `onRpcBroken()` on the callback, and celld's
-  foreign stubs sent both as remote calls (`a34d8b5`, `.10`: implemented locally; still no sync
-  on `.10`); and the retiring-isolate refusal (`.12`). Retest on `.13`.
+  foreign stubs sent both as remote calls (`a34d8b5`, `.10`: implemented locally); and the
+  retiring-isolate refusal (`.12`, made safe in `.14`). Verified on `.14`.
 - [x] Agent code runs (`executeCode`) failed with "Timed out waiting for logs from code
   execution": logs come back through the loaded Worker's tail, and celld reported tails only
   for `fetch()`, not RPC (`run()`). `d35faa8` (`.11`, Rust change) reports RPC calls too, with
   `event: { rpcMethod }`. Verified: the agent now sees its output.
 - [ ] Agent's `env.GADGET.getDocument()` (and every method) fails with `The RPC receiver does not
-  implement the method`: `GatekeeperLoopback`'s constructor returns a get-only Proxy, and
-  `__entrypointResolve` checked `prop in inst`. `27e98e0` (`.13`) fixes; untested. Seen from
-  the loaded worker, `env.GADGET` enumerates only `fetch` and `scheduled`.
+  implement the method`. `GatekeeperLoopback`'s constructor returns a get-only Proxy over the
+  un-awaited `stub.startGatekeeperSession()`. `.13` taught `__entrypointResolve` to read through
+  the Proxy, but celld's DO stub calls returned a plain Promise, so the property was still
+  `undefined` (still failing on `.14`). `.15` (`333a2c7`) returns a pipelinable RpcPromise;
+  untested. Seen from the loaded worker, `env.GADGET` enumerates only `fetch` and `scheduled`
+  (expected: methods resolve lazily).
 - [ ] Agent can't read the document's text. Asked "can you not read my document?", it ran a
   `grep`-style search (`{"pattern": ".*", "workpiece": "GADGET"}`), found nothing, and said it
   couldn't access the text. Investigate: is the document's content only in the gadget's
