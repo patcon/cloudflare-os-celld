@@ -31,10 +31,44 @@ Experiment: run Cloudflare OS on [celld](https://celld.dev). Status: the backend
   `callback(metadata)` (`overseer.ts`, `OverseerClientInterface`), and that callback is the
   browser's, forwarded through the session Worker, so it has no Durable Object owner.
   `__remoteStubOp` rejects it, and `.catch(unsubscribe)` swallows the error.
-- [ ] Extend the patch to stubs owned by a stateless (non-DO) isolate: route the call back to the
+- [x] Extend the patch to stubs owned by a stateless (non-DO) isolate: route the call back to the
   isolate *and* the live request context that exported it. This is the remaining part of
   denoland/celld#174, and it's needed for every subscription (metadata, connected accounts,
-  chat streaming).
+  chat streaming). Done in patcon/celld `c6df64b` + `1f7076f`, released as
+  `0.6.1-rpc-targets.3` (run 37561530298; `.1` and `.2` kept beside it in `~/.local/bin`):
+  - A stateless owner's marker carries its heap id (`h`); `__stub_rpc_call_heap` runs the call
+    as a new `WorkerJob::StubRpc` event on that isolate's slot (same pattern as the Worker
+    Loader RPC op), under the exporting request's JS context. Same-node only; a gone or
+    retiring isolate errors.
+  - Second bug found on the way: capnweb disposes stubs passed in params when the call returns,
+    relying on workerd's `rpc_params_dup_stubs` (default since 2026-01-20; the app is on
+    2026-09-04). celld doesn't do that, so the Overseer got `This RpcImportHook was already
+    disposed.` The lift now keeps a `dup()` of a target that has its own `dup()`.
+  - Verified on `.5`: existing workspaces open (by reload or from the sidebar), and a Gemini chat
+    turn completes (`agent.run.finished outcome=ok`).
+  - Not yet verified: connected accounts (`subscriber.ready is not a function`), live streaming
+    of text deltas, live sidebar updates after rename/delete.
+- [ ] A workspace created by sending the first message from Home hangs on "Loading workspace…";
+  a reload shows it. Not the subscription routing above: opening an existing workspace in the
+  same session works.
+- [x] `tracing` (`ctx.tracing` and `cloudflare:workers`) was missing, so every agent turn failed
+  with `Cannot read properties of undefined (reading 'enterSpan')`. celld `e5878e3` adds a no-op
+  API (untraced spans).
+- [x] `Invalid reader mode 'byob'` on gadget creation: `readReleasePack` reads
+  `new Blob([pack]).stream()` with a BYOB reader, and celld's `Blob.stream()` was a plain stream.
+  celld `31456c8` (`0.6.1-rpc-targets.5`) makes it a byte stream; gadgets now get created. Packs
+  received over RPC from a gatekeeper (`git-cache.ts` `consumePack`) will still fail: celld can't
+  carry RPC streams across isolates yet.
+- [ ] Gadget preview shows "Failed to connect gadget to server": the server throws
+  `this.ctx.restore is not a function` (`getGadgetFacet`, `overseer.ts:4394`). celld had no
+  persistent stubs. celld `13eb098` (`0.6.1-rpc-targets.6`, building) adds the `restore` symbol
+  and a `DurableObjectState.restore(params)` that calls `[restore](params)` at once and returns
+  a live stub. Still missing: storing such a stub and reviving it later (hooks), and
+  `ctx.restore` on a `WorkerEntrypoint` (`RESTORE_FORGER_HARNESS`).
+- Anthropic keys that aren't workspace-scoped get a 400 asking for `anthropic-workspace-id`;
+  use a workspace-scoped key (unrelated to celld).
+  - Note: `celld dev` self-fences with exit 3 (`SELF-FENCE: node lease not renewed`) when the
+    Mac idle-sleeps; that's the lease watchdog, not this patch.
 
 ### Handoff: routing callbacks owned by a stateless isolate
 
